@@ -53,6 +53,8 @@ export function OrderFlowProvider({ children }) {
   const [unitPrice, setUnitPrice] = useState(0)
   const [orderQty, setOrderQty] = useState(1)
   const [selectionSummary, setSelectionSummary] = useState('')
+  /** Mini Bouquet customized package snapshot (product checkout only) */
+  const [bouquetBundle, setBouquetBundle] = useState(null)
   /** Buy-now flat file list (also mirrored into lineFiles under buy-now line id) */
   const [files, setFiles] = useState([])
   /** @type {[{ [lineId: string]: OrderFile[] }, function]} */
@@ -82,6 +84,7 @@ export function OrderFlowProvider({ children }) {
     setUnitPrice(0)
     setOrderQty(1)
     setSelectionSummary('')
+    setBouquetBundle(null)
     setCustomer(null)
     setServerOrderId(null)
     setBuyNowPhotoMeta({
@@ -128,6 +131,7 @@ export function OrderFlowProvider({ children }) {
     setSelectionSummary(
       snapshot.map((i) => `${i.name} ×${i.qty}`).join('; '),
     )
+    setBouquetBundle(null)
     setServerOrderId(null)
   }, [])
 
@@ -142,6 +146,7 @@ export function OrderFlowProvider({ children }) {
       photosPerUnit = null,
       productId = null,
       initialFiles = null,
+      bouquetBundle: bouquet = null,
     }) => {
       setCheckoutSource('product')
       setCartSnapshot(null)
@@ -150,6 +155,7 @@ export function OrderFlowProvider({ children }) {
       setProductName(name ?? '')
       setUnitPrice(typeof price === 'number' ? price : 0)
       setSelectionSummary(summary ?? '')
+      setBouquetBundle(bouquet || null)
       const q = Math.max(1, Math.min(99, Math.floor(Number(quantity)) || 1))
       setOrderQty(q)
       setBuyNowPhotoMeta({
@@ -254,6 +260,7 @@ export function OrderFlowProvider({ children }) {
       unitPrice,
       orderQty,
       selectionSummary,
+      bouquetBundle,
       files,
       lineFiles,
       customer,
@@ -280,6 +287,7 @@ export function OrderFlowProvider({ children }) {
       unitPrice,
       orderQty,
       selectionSummary,
+      bouquetBundle,
       files,
       lineFiles,
       customer,

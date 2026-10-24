@@ -62,6 +62,7 @@ function serializeItems(items) {
       typeof x.photosPerUnit === 'number' ? x.photosPerUnit : null,
     customizationMode: x.customizationMode || null,
     photoCountHint: x.photoCountHint ?? 0,
+    bouquetBundle: x.bouquetBundle || null,
   }))
 }
 
@@ -105,6 +106,7 @@ export function CartProvider({ children }) {
       photosPerUnit = null,
       photos = null,
       customizationMode = null,
+      bouquetBundle = null,
     }) => {
       const q = clampQty(addQty)
       const photoMode = isPhotoUploadProduct(slug)
@@ -121,6 +123,7 @@ export function CartProvider({ children }) {
               ...next[i],
               qty: clampQty(next[i].qty + q),
               image: next[i].image || image || null,
+              bouquetBundle: bouquetBundle || next[i].bouquetBundle || null,
             }
             return next
           }
@@ -140,6 +143,7 @@ export function CartProvider({ children }) {
             photosPerUnit,
             customizationMode,
             photoCountHint: Array.isArray(photos) ? photos.length : 0,
+            bouquetBundle: bouquetBundle || null,
           },
         ]
       })

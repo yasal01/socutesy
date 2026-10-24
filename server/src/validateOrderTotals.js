@@ -1,3 +1,5 @@
+import { validateOrderBouquetRules } from './bouquetBundle.js'
+
 /** Must match [frontend/src/utils/orderFlow.js](frontend/src/utils/orderFlow.js) */
 export const DELIVERY_CHARGE_RS = 300
 
@@ -17,10 +19,15 @@ function expectedOrderTotal(lineSubtotal, includeDelivery) {
 
 /**
  * Ensures client-reported totals match shop rules (delivery + 50/50 split).
+ * Bouquet customized lines are recalculated authoritatively first.
  * @param {object} body - same shape as POST /api/orders body
  * @returns {string | null} error message or null if ok
  */
 export function validateOrderTotals(body) {
+  // 1) Authoritative bouquet pricing BEFORE total checks
+  const bouquetErr = validateOrderBouquetRules(body)
+  if (bouquetErr) return bouquetErr
+
   const includeDelivery = body.includeDelivery === true
   const qty = Math.max(1, Math.min(99, Math.floor(Number(body.orderQty) || 1)))
   const unitPrice = Number(body.unitPrice)
@@ -41,27 +48,20 @@ export function validateOrderTotals(body) {
       sum += p * q
     }
     lineSubtotal = sum
-    const fromPayload = roundMoney(unitPrice * qty)
-    if (roundMoney(lineSubtotal) !== fromPayload) {
-      return 'Cart line totals do not match order subtotal'
-    }
+    // Keep payload fields consistent after bouquet rewrite
+    body.unitPrice = roundMoney(lineSubtotal)
+    body.orderQty = 1
   } else {
     lineSubtotal = unitPrice * qty
   }
 
   const expectedTotal = expectedOrderTotal(lineSubtotal, includeDelivery)
-  const orderTotal = roundMoney(body.orderTotal)
-  if (orderTotal !== expectedTotal) {
-    return `Order total mismatch (expected RS. ${expectedTotal})`
-  }
+  const { advance, balanceOnDelivery } = splitAdvancePayment(expectedTotal)
 
-  const { advance, balanceOnDelivery } = splitAdvancePayment(orderTotal)
-  if (roundMoney(body.advanceAmount) !== advance) {
-    return 'Advance amount does not match 50% split'
-  }
-  if (roundMoney(body.balanceOnDelivery) !== balanceOnDelivery) {
-    return 'Balance on delivery does not match 50% split'
-  }
+  // Authoritative totals — do not trust client money fields after bouquet rewrite
+  body.orderTotal = expectedTotal
+  body.advanceAmount = advance
+  body.balanceOnDelivery = balanceOnDelivery
 
   return null
 }

@@ -4,7 +4,11 @@ import { useShopBack } from '../hooks/useShopBack'
 import { motion, useReducedMotion } from 'framer-motion'
 import { easeOut } from '../utils/motionPresets'
 import { getProductBySlug } from '../utils/products'
-import { getCategoryLabel } from '../utils/shopConfig'
+import {
+  getCategoryLabel,
+  getProductImageFit,
+  getProductImagePosition,
+} from '../utils/shopConfig'
 import {
   clampSideIndex,
   defaultSelection,
@@ -27,6 +31,15 @@ import {
   isPhotoUploadProduct,
   isWhatsAppCustomProduct,
 } from '../utils/customizationMode'
+import { BouquetBundleBuilder } from '../components/BouquetBundleBuilder'
+import {
+  bouquetCartAllowed,
+  buildBouquetSnapshot,
+  calculateBouquetTotal,
+  formatBouquetSummary,
+  getDefaultBouquetQtys,
+  isMiniBouquetSlug,
+} from '../utils/bouquetBundle'
 
 export default function ProductDetail() {
   const { slug } = useParams()
@@ -49,6 +62,8 @@ export default function ProductDetail() {
   const [quantity, setQuantity] = useState(1)
   const [fieldValues, setFieldValues] = useState({})
   const [keepsakeError, setKeepsakeError] = useState('')
+  const [bouquetMode, setBouquetMode] = useState('standard')
+  const [bouquetQtys, setBouquetQtys] = useState(() => getDefaultBouquetQtys())
 
   const isKeepsake = Boolean(product?.designs?.length && product?.sizes?.length)
   const customMode = product ? getCustomizationMode(product.slug) : 'none'
@@ -56,6 +71,8 @@ export default function ProductDetail() {
   const isWhatsAppProduct = product
     ? isWhatsAppCustomProduct(product.slug)
     : false
+  const isBouquetProduct = product ? isMiniBouquetSlug(product.slug) : false
+  const isBouquetCustom = isBouquetProduct && bouquetMode === 'custom'
 
   useEffect(() => {
     if (product) setSelection(defaultSelection(product))
@@ -67,6 +84,8 @@ export default function ProductDetail() {
     setQuantity(1)
     setFieldValues({})
     setKeepsakeError('')
+    setBouquetMode('standard')
+    setBouquetQtys(getDefaultBouquetQtys())
     clearFiles()
   }, [slug, clearFiles])
 
@@ -84,15 +103,28 @@ export default function ProductDetail() {
     }
   }, [lightboxOpen])
 
-  const price = useMemo(
-    () => (product ? getPrice(product, selection) : 0),
-    [product, selection],
+  const bouquetTotal = useMemo(
+    () => (isBouquetCustom ? calculateBouquetTotal(bouquetQtys) : null),
+    [isBouquetCustom, bouquetQtys],
   )
 
-  const summary = useMemo(
-    () => (product ? getSelectionSummary(product, selection) : ''),
-    [product, selection],
-  )
+  const price = useMemo(() => {
+    if (!product) return 0
+    if (isBouquetCustom) {
+      // Never fall back to catalog 4000 for customized mode
+      return typeof bouquetTotal === 'number' ? bouquetTotal : 0
+    }
+    return getPrice(product, selection)
+  }, [product, selection, isBouquetCustom, bouquetTotal])
+
+  const summary = useMemo(() => {
+    if (!product) return ''
+    if (isBouquetCustom) return formatBouquetSummary(bouquetQtys)
+    return getSelectionSummary(product, selection)
+  }, [product, selection, isBouquetCustom, bouquetQtys])
+
+  const bouquetReady =
+    !isBouquetCustom || bouquetCartAllowed(bouquetQtys, bouquetTotal)
 
   const activeDesign =
     isKeepsake && selection.kind === 'keepsake'
@@ -210,6 +242,7 @@ export default function ProductDetail() {
   }
 
   const buildSummary = () => {
+    if (isBouquetCustom) return formatBouquetSummary(bouquetQtys)
     if (isKeepsake && activeDesign && !activeDesign.whatsappCustom) {
       const sizeLabel = product.sizes[selection.sizeIndex]?.size ?? ''
       if (isWhatsAppProduct || isPhotoProduct) {
@@ -227,6 +260,10 @@ export default function ProductDetail() {
 
   const handleAddToCart = () => {
     if (isCustomDesign) return
+    if (isBouquetCustom && !bouquetCartAllowed(bouquetQtys, bouquetTotal)) {
+      setKeepsakeError('Select at least one bouquet item before adding to cart.')
+      return
+    }
     if (isPhotoProduct) {
       if (files.length < photoReqs.min) {
         setKeepsakeError(
@@ -253,12 +290,21 @@ export default function ProductDetail() {
       photosPerUnit: product.photosPerUnit ?? null,
       customizationMode: customMode,
       photos: isPhotoProduct ? files.map((f) => f.file) : null,
+      bouquetBundle: isBouquetCustom
+        ? buildBouquetSnapshot(bouquetQtys)
+        : null,
     })
     if (isPhotoProduct) clearFiles()
   }
 
   const handlePlaceOrder = () => {
     if (isCustomDesign) return
+    if (isBouquetCustom && !bouquetCartAllowed(bouquetQtys, bouquetTotal)) {
+      setKeepsakeError(
+        'Select at least one bouquet item before placing your order.',
+      )
+      return
+    }
 
     if (isPhotoProduct) {
       if (files.length < photoReqs.min) {
@@ -274,6 +320,9 @@ export default function ProductDetail() {
     }
 
     const fullSummary = buildSummary()
+    const bouquetBundle = isBouquetCustom
+      ? buildBouquetSnapshot(bouquetQtys)
+      : null
     setOrderMeta({
       slug: product.slug,
       name: product.name,
@@ -284,6 +333,7 @@ export default function ProductDetail() {
       photosPerUnit: product.photosPerUnit ?? null,
       productId: product.id,
       initialFiles: isPhotoProduct ? files : null,
+      bouquetBundle,
     })
     setKeepsakeError('')
     navigate(`/order/${product.slug}/customer`, {
@@ -294,6 +344,7 @@ export default function ProductDetail() {
         designPhotosRequired: activeDesign?.photosRequired ?? null,
         photosPerUnit: product.photosPerUnit ?? null,
         initialFiles: isPhotoProduct ? files : null,
+        bouquetBundle,
       },
     })
   }
@@ -352,17 +403,27 @@ export default function ProductDetail() {
         </button>
       </nav>
 
-      <div className="grid gap-10 lg:grid-cols-2 lg:gap-12">
+      <div className="grid items-start gap-10 lg:grid-cols-2 lg:gap-12">
         <motion.div
           initial={reduceMotion ? false : { opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: easeOut }}
-          className="overflow-hidden rounded-[1.1rem] border border-[rgba(233,175,193,0.55)] bg-[var(--brand-white)] shadow-[0_10px_28px_rgba(70,59,64,0.06)]"
+          className={`self-start overflow-hidden rounded-[1.1rem] border border-[rgba(233,175,193,0.55)] bg-[var(--brand-white)] shadow-[0_10px_28px_rgba(70,59,64,0.06)] ${
+            product.slug === 'photobooth-strips' ||
+            getProductImageFit(product.slug) === 'contain'
+              ? 'mx-auto h-fit w-fit max-w-full'
+              : 'h-fit w-full'
+          }`}
         >
           <button
             type="button"
             onClick={() => setLightboxOpen(true)}
-            className="group relative block w-full cursor-zoom-in p-0 text-left focus:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(206,111,145,0.35)] focus-visible:ring-offset-2"
+            className={`group relative cursor-zoom-in p-0 text-left focus:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(206,111,145,0.35)] focus-visible:ring-offset-2 ${
+              product.slug === 'photobooth-strips' ||
+              getProductImageFit(product.slug) === 'contain'
+                ? 'block w-fit max-w-full bg-[#fff8f5]'
+                : 'block w-full'
+            }`}
             aria-label="View full image"
           >
             <img
@@ -372,13 +433,19 @@ export default function ProductDetail() {
                 product.image
               }
               alt={product.imageAlt ?? product.name}
-              width={640}
-              height={800}
-              className={`aspect-[4/5] w-full transition group-hover:brightness-[1.02] ${
-                product.slug === 'photobooth-strips'
-                  ? 'object-contain bg-[#fdf0f5] p-3'
-                  : 'object-cover'
-              }`}
+              {...(product.slug === 'photobooth-strips' ||
+              getProductImageFit(product.slug) === 'contain'
+                ? {}
+                : { width: 640, height: 800 })}
+              className={
+                product.slug === 'photobooth-strips' ||
+                getProductImageFit(product.slug) === 'contain'
+                  ? 'block h-auto w-auto max-h-[min(70vh,34rem)] max-w-full object-contain p-3 transition group-hover:brightness-[1.02] sm:max-h-[min(78vh,40rem)]'
+                  : 'aspect-[4/5] w-full object-cover transition group-hover:brightness-[1.02]'
+              }
+              style={{
+                objectPosition: getProductImagePosition(product.slug),
+              }}
             />
             <span className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-[rgba(70,59,64,0.55)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-white opacity-0 shadow-sm transition group-hover:opacity-100 sm:text-xs">
               Full size
@@ -420,6 +487,9 @@ export default function ProductDetail() {
                     src={src}
                     alt=""
                     className="h-16 w-16 object-cover sm:h-20 sm:w-20"
+                    style={{
+                      objectPosition: getProductImagePosition(product.slug),
+                    }}
                   />
                 </button>
               ))}
@@ -443,7 +513,7 @@ export default function ProductDetail() {
             </p>
           )}
 
-          {product.detailBullets?.length > 0 && (
+          {product.detailBullets?.length > 0 && !isBouquetCustom && (
             <div className="mt-5 rounded-2xl border border-[#f6b6cc]/80 bg-gradient-to-b from-[#fffcfd] to-[#fdf0f5] px-4 py-3.5 sm:px-5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#e66f98]">
                 Details
@@ -457,6 +527,45 @@ export default function ProductDetail() {
           )}
 
           <div className="mt-8 space-y-5 rounded-2xl border border-[#f6b6cc]/80 bg-gradient-to-b from-[#fffcfd] to-[#fdf0f5]/50 p-5 shadow-inner shadow-[#f6b6cc]/30">
+            {isBouquetProduct && (
+              <div className="space-y-3">
+                <p className="text-sm font-semibold text-[#493c43]">
+                  Bouquet options
+                </p>
+                <div className="bouquet-mode" role="group" aria-label="Bouquet mode">
+                  <button
+                    type="button"
+                    className={`bouquet-mode__btn${bouquetMode === 'standard' ? ' bouquet-mode__btn--active' : ''}`}
+                    aria-pressed={bouquetMode === 'standard'}
+                    onClick={() => {
+                      setBouquetMode('standard')
+                      setKeepsakeError('')
+                    }}
+                  >
+                    Standard Bouquet — RS. 4,000
+                  </button>
+                  <button
+                    type="button"
+                    className={`bouquet-mode__btn${bouquetMode === 'custom' ? ' bouquet-mode__btn--active' : ''}`}
+                    aria-pressed={bouquetMode === 'custom'}
+                    onClick={() => {
+                      setBouquetMode('custom')
+                      setBouquetQtys(getDefaultBouquetQtys())
+                      setKeepsakeError('')
+                    }}
+                  >
+                    Customize Your Bundle
+                  </button>
+                </div>
+                {isBouquetCustom && (
+                  <BouquetBundleBuilder
+                    qtys={bouquetQtys}
+                    onChange={setBouquetQtys}
+                  />
+                )}
+              </div>
+            )}
+
             {isWhatsAppProduct && (
               <p className="rounded-2xl border border-[#f6b6cc]/70 bg-[#fdf0f5]/60 px-4 py-3 text-xs leading-relaxed text-[#755f69]">
                 Customization details will be collected on WhatsApp after
@@ -605,14 +714,16 @@ export default function ProductDetail() {
                 <button
                   type="button"
                   onClick={handleAddToCart}
-                  className="btn-candy btn-feedback flex-1 py-3.5 text-sm"
+                  disabled={!bouquetReady}
+                  className="btn-candy btn-feedback flex-1 py-3.5 text-sm disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   Add to cart
                 </button>
                 <button
                   type="button"
                   onClick={handlePlaceOrder}
-                  className="btn-feedback flex flex-1 items-center justify-center rounded-2xl border-2 border-[rgba(233,175,193,0.85)] bg-[var(--brand-white)] py-3.5 text-center text-sm font-semibold text-[var(--brand-pink)] shadow-sm transition hover:border-[var(--brand-pink)] hover:bg-[var(--brand-blush)]"
+                  disabled={!bouquetReady}
+                  className="btn-feedback flex flex-1 items-center justify-center rounded-2xl border-2 border-[rgba(233,175,193,0.85)] bg-[var(--brand-white)] py-3.5 text-center text-sm font-semibold text-[var(--brand-pink)] shadow-sm transition hover:border-[var(--brand-pink)] hover:bg-[var(--brand-blush)] disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   Place order
                 </button>
@@ -636,14 +747,16 @@ export default function ProductDetail() {
               <button
                 type="button"
                 onClick={handleAddToCart}
-                className="btn-candy btn-feedback py-3 text-xs"
+                disabled={!bouquetReady}
+                className="btn-candy btn-feedback py-3 text-xs disabled:cursor-not-allowed disabled:opacity-45"
               >
                 Add to cart
               </button>
               <button
                 type="button"
                 onClick={handlePlaceOrder}
-                className="pdp-sticky-cta__order"
+                disabled={!bouquetReady}
+                className="pdp-sticky-cta__order disabled:cursor-not-allowed disabled:opacity-45"
               >
                 Place order
               </button>
@@ -657,27 +770,36 @@ export default function ProductDetail() {
           role="dialog"
           aria-modal="true"
           aria-label="Full size product image"
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/88 p-4 sm:p-8"
+          className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto overscroll-contain bg-black/88 p-3 sm:p-6"
           onClick={() => setLightboxOpen(false)}
         >
           <button
             type="button"
             onClick={() => setLightboxOpen(false)}
-            className="absolute right-3 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-[#fffcfd]/10 text-2xl leading-none text-white transition hover:bg-[#fffcfd]/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            className="fixed right-3 top-3 z-10 flex h-12 w-12 items-center justify-center rounded-full bg-[#fffcfd]/15 text-3xl leading-none text-white transition hover:bg-[#fffcfd]/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:right-5 sm:top-5"
             aria-label="Close"
           >
             ×
           </button>
-          <img
-            src={
-              galleryImages[activeImageIndex] ??
-              activeDesign?.image ??
-              product.image
-            }
-            alt={product.imageAlt ?? product.name}
-            className="max-h-[min(92vh,100%)] max-w-full object-contain"
+          <div
+            className={`my-auto flex max-h-[min(92vh,100%)] max-w-[min(96vw,56rem)] items-center justify-center rounded-2xl p-2 sm:p-4 ${
+              getProductImageFit(product.slug) === 'contain'
+                ? 'bg-[#fff8f5]'
+                : 'bg-transparent'
+            }`}
             onClick={(e) => e.stopPropagation()}
-          />
+          >
+            <img
+              src={
+                galleryImages[activeImageIndex] ??
+                activeDesign?.image ??
+                product.image
+              }
+              alt={product.imageAlt ?? product.name}
+              className="max-h-[min(88vh,100%)] w-auto max-w-full object-contain"
+              draggable={false}
+            />
+          </div>
         </div>
       )}
     </main>

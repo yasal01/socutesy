@@ -37,6 +37,7 @@ export default function CustomerFormPage() {
     unitPrice,
     orderQty,
     selectionSummary,
+    bouquetBundle,
     setServerOrderId,
     addFiles,
     removeFileAt,
@@ -183,6 +184,8 @@ export default function CustomerFormPage() {
         orderQty: qty,
         selectionSummary,
         cartSnapshot: checkoutSource === 'cart' ? cartSnapshot : null,
+        bouquetBundle:
+          !isCartCheckout && bouquetBundle ? bouquetBundle : null,
         customer: data,
         includeDelivery,
         orderTotal,

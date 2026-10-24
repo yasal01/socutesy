@@ -389,7 +389,7 @@ export const products = [
       'Photo collage CD cases',
       'Gift-ready packaging',
     ],
-    price: 1500,
+    price: 800,
   },
   {
     id: 'phone-case',
@@ -419,8 +419,8 @@ export const products = [
     slug: 'tote-bag',
     name: 'Tote Bag',
     category: 'gifting',
-    image: '/images/tote-bag-1.png?v=2',
-    images: ['/images/tote-bag-1.png?v=2', '/images/tote-bag-2.jpg?v=2'],
+    image: '/images/tote-bag-1.png?v=5',
+    images: ['/images/tote-bag-1.png?v=5', '/images/tote-bag-2.jpg?v=5'],
     imageAlt:
       'Custom canvas tote bags — peacock floral print and playful smiley designs.',
     description:

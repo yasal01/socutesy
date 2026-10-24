@@ -148,10 +148,10 @@ export const PRODUCT_IMAGE_POSITION = {
   newspaper: 'center 28%',
   'mini-frame': 'center 22%',
   'keepsake-frame': 'center 28%',
-  'mini-bouquet': 'center 32%',
+  'mini-bouquet': 'center center',
   'cd-journal': 'center 26%',
   'phone-case': 'center 22%',
-  'tote-bag': 'center 32%',
+  'tote-bag': 'center center',
   'mini-album': 'center 22%',
   polaroids: 'center 28%',
   'mini-photobook': 'center 26%',
@@ -169,6 +169,8 @@ export const PRODUCT_IMAGE_FIT = {
   'photobooth-strips': 'contain',
   bookmarks: 'contain',
   stickers: 'contain',
+  'tote-bag': 'contain',
+  'mini-bouquet': 'contain',
 }
 
 export function getProductImagePosition(slug) {

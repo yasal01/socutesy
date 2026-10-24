@@ -198,6 +198,7 @@ app.post('/api/orders', orderCreateLimiter, (req, res) => {
     orderQty,
     selectionSummary,
     cartSnapshot,
+    bouquetBundle,
     customer,
     includeDelivery,
     orderTotal,
@@ -206,12 +207,25 @@ app.post('/api/orders', orderCreateLimiter, (req, res) => {
   } = req.body
 
   let cart_snapshot_json = null
-  if (cartSnapshot != null) {
-    try {
+  try {
+    if (cartSnapshot != null) {
       cart_snapshot_json = JSON.stringify(cartSnapshot)
-    } catch {
-      return res.status(400).json({ error: 'cartSnapshot must be JSON-serializable' })
+    } else if (bouquetBundle != null) {
+      // Persist bouquet contents for product (buy-now) checkout
+      cart_snapshot_json = JSON.stringify([
+        {
+          name: String(productName || '').trim(),
+          slug: typeof slug === 'string' ? slug : null,
+          unitPrice,
+          qty: Math.floor(orderQty),
+          summary:
+            typeof selectionSummary === 'string' ? selectionSummary : '',
+          bouquetBundle,
+        },
+      ])
     }
+  } catch {
+    return res.status(400).json({ error: 'cartSnapshot must be JSON-serializable' })
   }
 
   try {
